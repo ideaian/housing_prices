@@ -64,15 +64,17 @@ def prepare_data(df, not_useful_fields=None,
        
     # All, remove duplicates
     df.drop_duplicates(inplace=True)
-    print('here')
+
     # Remove entire fields as they are not needed. 
     df = remove_not_useful_fields(df, not_useful_fields)
+
     # Remove rows with fields as nan
     # This will drop rows if the specified field is Nan. 
     if required_fields is not None:
         #import ipdb; ipdb.set_trace()
         for field in required_fields:
             df.drop(df.index[pd.isnull(df[field])], inplace=True)
+
     # Replace zeros with nan for imputation down the way
     if zero_to_nan_fields is not None:
         for field in zero_to_nan_fields:
@@ -187,11 +189,9 @@ df2 = prepare_data(df, not_useful_fields=not_useful_fields,
 
 print('Preparing Data: splitting test/train/validation')
 df_train, df_test, df_validation = train_validate_test_split(df2)
-X = df_train[df_train.columns.drop('estimated_value')]
-y = df_train['estimated_value']
 
 X_test = df_test[df_train.columns.drop('estimated_value')]
-y_test = df_test['estimated_value']
+y_test = np.log(df_test['estimated_value'] + 1)
 
 
 '''
