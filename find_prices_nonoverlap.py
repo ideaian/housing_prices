@@ -85,30 +85,36 @@ class TransformZipCodes(BaseEstimator, TransformerMixin):
 
     # A better way would be to use a web API to search the address and extract the zipcode
     # I'm going to do this first.
+
+    # For the future: make this a general imputer that provides classification for training data
+    # using clustering methods. 
     
     def __init__(self):
         self.zip_code_lat_long_df = pd.DataFrame()
 
-    def fit(self, X, y):
+    def fit(self, X):
         self.zip_code_lat_long_df = \
-            pd.groupby(df,'zipcode')['latitude','longitude'].mean().add_suffix('_mean') 
+            pd.groupby(X,'zipcode')['latitude','longitude'].mean().add_suffix('_mean') 
         return self
 
     def transform(self, X):
-        dd = X[~X['zipcode'].isin(self.zip_code_lat_long_df.index)][['latitude','longitude']]
+        bad_index = ~X['zipcode'].isin(self.zip_code_lat_long_df.index)
+        dd = X[bad_index][['latitude','longitude']]
 
+        if len(dd) == 0:
+            # No unseen zipcodes were found
+            return X
+        
         ndx =(dd[['latitude','longitude']]).reset_index().apply(
                                     lambda x: smallest_gcd_distance_ndx(
                                         self.zip_code_lat_long_df.latitude_mean.values, 
                                         self.zip_code_lat_long_df.longitude_mean.values, 
                                         x[0],x[1]), 
                                     axis=1)
-        X.loc[~X['zipcode'].isin(zip_code_lat_long_df.index),'zipcode'] = \
-            zip_code_lat_long_df.iloc[ndx].index
+        X.loc[bad_index,'zipcode'] = \
+            self.zip_code_lat_long_df.iloc[ndx].index
         return X
 
-    #def fit_transform(self, x):
-    #    return None
 
 def smallest_gcd_distance_ndx(lat1, lng1, lat2, lng2):
     '''
@@ -116,33 +122,6 @@ def smallest_gcd_distance_ndx(lat1, lng1, lat2, lng2):
     '''
     return np.argmin(gcd_vec(lat1, lng1, lat2, lng2))
     
-def gcd_vec(lat1, lng1, lat2, lng2):
-    '''
-    Calculate great circle distance.
-    http://www.johndcook.com/blog/python_longitude_latitude/
-
-    Parameters
-    ----------
-    lat1, lng1, lat2, lng2: float or array of float
-
-    Returns
-    -------
-    distance:
-      distance from ``(lat1, lng1)`` to ``(lat2, lng2)`` in kilometers.
-    '''
-    # python2 users will have to use ascii identifiers
-    f1 = np.deg2rad(90 - lat1)
-    f2 = np.deg2rad(90 - lat2)
-
-    t1 = np.deg2rad(lng1)
-    t2 = np.deg2rad(lng2)
-
-    cos = (np.sin(f1) * np.sin(f2) * np.cos(t1 - t2) +
-           np.cos(f1) * np.cos(f2))
-    arc = np.arccos(cos)
-    return arc * 6373
-
-
 def gcd_vec(lat1, lng1, lat2, lng2):
     '''
     Calculate great circle distance.
@@ -241,10 +220,10 @@ def featurize(features):
 
 
 def print_metrics(y, y_pred):
-    print(np.sqrt(metrics.mean_squared_error(y,y_pred)))
-    print(metrics.mean_absolute_error(y,y_pred))
-    print(metrics.r2_score(y,y_pred))
-    print(abs_mean_relative_error(y,y_pred))
+    print("Sqrt mse: {}".format(np.sqrt(metrics.mean_squared_error(y,y_pred))))
+    print("Mean absolute error: {}".format(metrics.mean_absolute_error(y,y_pred)))
+    print("R2 score: {}".format(metrics.r2_score(y,y_pred)))
+    print("Absolute mean relative error: {}".format(abs_mean_relative_error(y,y_pred))
 
 
 def abs_mean_relative_error(y,y_pred):
