@@ -18,7 +18,8 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 from sklearn import metrics
-            
+from sklearn.feature_extraction.text import CountVectorizer
+
 from sklearn.base import BaseEstimator, TransformerMixin
         
 def train_validate_test_split(df, train_percent=.6, validate_percent=.2, seed=None):
@@ -237,7 +238,8 @@ def convert_dates_helper(df, date_fields):
         
 
 def featurize(features):
-    
+    #TODO: This needs to be interal to prepare_data so that we can keep fields consistent
+    # namely, this is not general enough
     day_range = [0,6]
     week_range = [0,52]
     month_range = [0,11]
@@ -263,6 +265,16 @@ def featurize(features):
         ('priorSaleYear',MinMaxScaler()),
     ]
     return DataFrameMapper(filter(lambda x: x[0] in features, transformations))
+
+
+class StreetVectorizer(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        self.cv = CountVectorizer(analyzer='word', token_pattern='[A-Za-z]{3,}')
+    def fit(self,df, y):
+        self.cv.fit(df['address'])
+        return self
+    def transform(self, df):
+        return self.cv.transform(df['address'])
 
 
 def print_metrics(y, y_pred):
