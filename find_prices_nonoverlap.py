@@ -92,7 +92,6 @@ class KeepRequiredFields(BaseEstimator, TransformerMixin):
         for key in iter(df.keys()):
             if key not in self.required_fields:
                 df.drop(labels=key, axis=1, inplace=True)
-        import ipdb; ipdb.set_trace()
         return df
         
 
@@ -117,57 +116,12 @@ class PrepareData(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, df):
-        import ipdb; ipdb.set_trace()
         df = self.keep_required_fields.transform(df)
         df = self.zero_to_nan.transform(df)
         df = self.nan_to_zero.transform(df)
         df = self.imp_zip_codes.transform(df)
         df = self.convert_dates.transform(df) 
         return df
-
-
-def prepare_data(df, not_useful_fields=None,  
-                date_fields=None, 
-                remove_outliers=False, 
-                required_fields=None,
-                zero_to_nan_fields=None,
-                nan_to_zero_fields=None, 
-                categorical_fields=None):
-
-    # This function will clean the data
-       
-    # All, remove duplicates
-    df.drop_duplicates(inplace=True)
-
-    # Remove entire fields as they are not needed. 
-    df = remove_not_useful_fields(df, not_useful_fields)
-
-    # Remove rows with fields as nan
-    # This will drop rows if the specified field is Nan. 
-    if required_fields is not None:
-        #import ipdb; ipdb.set_trace()
-        for field in required_fields:
-            df.drop(df.index[pd.isnull(df[field])], inplace=True)
-
-    # Replace zeros with nan for imputation down the way
-    if zero_to_nan_fields is not None:
-        for field in zero_to_nan_fields:
-            df[df[field] == 0, field] = np.nan
-    # Replace nans with zeros for pseudo classification (due to nan's being present)
-    if nan_to_zero_fields is not None:
-        for field in nan_to_zero_fields:
-            print("Nulling field {}".format(field))
-
-            df.loc[pd.isnull(df[field]),'field'] = 0
-            #df[field][pd.isnull(df[field])] = 0
-    # Remove outlier values
-    if remove_outliers:
-        print('Not Implemented')
-        None
-
-    df, new_fields = convert_dates_helper(df, date_fields)
-
-    return df, new_fields
 
 
 class ImputeZipCodes(BaseEstimator, TransformerMixin):
