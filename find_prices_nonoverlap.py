@@ -5,7 +5,7 @@ import seaborn as sns
 from sklearn import preprocessing
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import( 
-    LabelEncoder, LabelBinarizer, MinMaxScaler, StandardScaler, OneHotEncoder, Imputer
+    LabelEncoder, LabelBinarizer, MinMaxScaler, StandardScaler, LabelEncoder, Imputer
 )
 # CategoricalEncoder
 from sklearn_pandas import DataFrameMapper
@@ -18,30 +18,8 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 from sklearn import metrics
-def prepare_test_train_validation(df, split_by_zipcode=False, seed=1234, 
-                                  train_percent=0.6, validate_percent=0.2):
-    print("Splitting test train and validatiaon")
-    min_needed_by_zipcode = 10
-    df_train, df_test, df_validate = pd.DataFrame()
-    if split_by_zipcode:
-        zipcodes = df['zipcode'].unique()
-        for zipcode in zipcodes:
-            df_zip = df[df['zipcode']==zipcode]
-            out = train_validate_test_split(df_zip, 
-                                            train_percent=train_percent, 
-                                            validate_percent=validate_percent, 
-                                            seed=seed)
-            df_train.append(out[0], ignore_index=True)
-            df_test.append(out[1], ignore_index=True)
-            df_validate.append(out[2], ignore_index=True)
-    else:
-        df_train, df_test, df_validate = \
-            train_validate_test_split(df, 
-                                      train_percent=train_percent, 
-                                      validate_percent=validate_percent, 
-                                      seed=seed)
-    return df_train, df_test, df_validate
             
+from sklearn.base import BaseEstimator, TransformerMixin
         
 def train_validate_test_split(df, train_percent=.6, validate_percent=.2, seed=None):
     np.random.seed(seed)
@@ -59,7 +37,10 @@ def prepare_data(df, not_useful_fields=None,
                 date_fields=None, 
                 remove_outliers=False, 
                 required_fields=None,
-                zero_to_nan_fields=None):
+                zero_to_nan_fields=None,
+                nan_to_zero_fields=None, 
+                categorical_fields=None):
+
     # This function will clean the data
        
     # All, remove duplicates
@@ -79,14 +60,123 @@ def prepare_data(df, not_useful_fields=None,
     if zero_to_nan_fields is not None:
         for field in zero_to_nan_fields:
             df[field][df[field] == 0] = np.nan
-    
+    # Replace nans with zeros for pseudo classification (due to nan's being present)
+    if nan_to_zero_fields is not None:
+        for field in nan_to_zero_fields:
+            print("Nulling field {}".format(field))
+
+            df.loc[pd.isnull(df[field]),'field'] = 0
+            #df[field][pd.isnull(df[field])] = 0
     # Remove outlier values
     if remove_outliers:
+        print('Not Implemented')
         None
-    df = convert_dates(df, date_fields)
 
-    return df
+    df, new_fields = convert_dates(df, date_fields)
+    df, new_categorical_fields = convert_to_categorical_features(df, categorical_fields)
+
+    return df, new_fields+new_categorical_fields
+
+
+class TransformZipCodes(BaseEstimator, TransformerMixin):
+    # This class will make zipcodes become 
+    # for data not containing the zipcode, it will find the 
+    # center of zipcode lat-long data and estimate a zipcode
+
+    # A better way would be to use a web API to search the address and extract the zipcode
+    # I'm going to do this first.
     
+    def __init__(self):
+        self.zip_code_lat_long_df = pd.DataFrame()
+
+    def fit(self, X, y):
+        self.zip_code_lat_long_df = \
+            pd.groupby(df,'zipcode')['latitude','longitude'].mean().add_suffix('_mean') 
+        return self
+
+    def transform(self, X):
+        dd = X[~X['zipcode'].isin(self.zip_code_lat_long_df.index)][['latitude','longitude']]
+
+        ndx =(dd[['latitude','longitude']]).reset_index().apply(
+                                    lambda x: smallest_gcd_distance_ndx(
+                                        self.zip_code_lat_long_df.latitude_mean.values, 
+                                        self.zip_code_lat_long_df.longitude_mean.values, 
+                                        x[0],x[1]), 
+                                    axis=1)
+        X.loc[~X['zipcode'].isin(zip_code_lat_long_df.index),'zipcode'] = \
+            zip_code_lat_long_df.iloc[ndx].index
+        return X
+
+    #def fit_transform(self, x):
+    #    return None
+
+def smallest_gcd_distance_ndx(lat1, lng1, lat2, lng2):
+    '''
+    find the array index of the smallest great-circal distance
+    '''
+    return np.argmin(gcd_vec(lat1, lng1, lat2, lng2))
+    
+def gcd_vec(lat1, lng1, lat2, lng2):
+    '''
+    Calculate great circle distance.
+    http://www.johndcook.com/blog/python_longitude_latitude/
+
+    Parameters
+    ----------
+    lat1, lng1, lat2, lng2: float or array of float
+
+    Returns
+    -------
+    distance:
+      distance from ``(lat1, lng1)`` to ``(lat2, lng2)`` in kilometers.
+    '''
+    # python2 users will have to use ascii identifiers
+    f1 = np.deg2rad(90 - lat1)
+    f2 = np.deg2rad(90 - lat2)
+
+    t1 = np.deg2rad(lng1)
+    t2 = np.deg2rad(lng2)
+
+    cos = (np.sin(f1) * np.sin(f2) * np.cos(t1 - t2) +
+           np.cos(f1) * np.cos(f2))
+    arc = np.arccos(cos)
+    return arc * 6373
+
+
+def gcd_vec(lat1, lng1, lat2, lng2):
+    '''
+    Calculate great circle distance.
+    http://www.johndcook.com/blog/python_longitude_latitude/
+
+    Parameters
+    ----------
+    lat1, lng1, lat2, lng2: float or array of float
+
+    Returns
+    -------
+    distance:
+      distance from ``(lat1, lng1)`` to ``(lat2, lng2)`` in kilometers.
+    '''
+    # python2 users will have to use ascii identifiers
+    f1 = np.deg2rad(90 - lat1)
+    f2 = np.deg2rad(90 - lat2)
+
+    t1 = np.deg2rad(lng1)
+    t2 = np.deg2rad(lng2)
+
+    cos = (np.sin(f1) * np.sin(f2) * np.cos(t1 - t2) +
+           np.cos(f1) * np.cos(f2))
+    arc = np.arccos(cos)
+    return arc * 6373
+
+
+def convert_to_categorical_features(df, categorical_fields):
+    # There is possibly a better way of doing this, but with dataframe_mapper and sklearn 
+    # categorical features doesn't work. To revise this involves changing the code to
+    # not rely on dataframe_mapper for featurize
+
+    return df, []
+
 
 def remove_not_useful_fields(df, not_useful_fields=None):
     # This function will remove entire columns of a dataframe that are 
@@ -105,6 +195,7 @@ def remove_not_useful_fields(df, not_useful_fields=None):
 def convert_dates(df, date_fields):
     # This function will convert date strings into numerical
     # forms that are more amenable for use by ML models
+    new_fields=[]
     for field in date_fields:
         d = pd.Series(pd.to_datetime(df[field],format='%Y-%m-%d'))
         
@@ -112,36 +203,22 @@ def convert_dates(df, date_fields):
         df[field+'WeekOfYear'] = d.dt.weekofyear
         df[field+'Month'] = d.dt.month
         df[field+'Year'] = d.dt.year
+        new_fields.append(field+'DayOfWeek')
+        new_fields.append(field+'WeekOfYear')
+        new_fields.append(field+'Month')
+        new_fields.append(field+'Year')
+    
+    return remove_not_useful_fields(df, date_fields), new_fields
+        
 
-    return remove_not_useful_fields(df, date_fields)
-        
-        
 def featurize(features):
-    #Zipcode: DO NOT NORMALIZE
-    # Warning if new zipcode is not present
-
-    #Lat/Long: normalize
-    #Bedrooms/Bathrooms/Rooms: normalize or not
-    #Square Footage: normalize
-    #lotSize: Normalize
-    #yearBuilt: nothing
-    #lastSaleAmount: Replace zero with nan
-    #lastSaleDate: Split
-    # lastSaleDayOfWeek
-    # lastSaleWeek
-    # lastSaleYear
-    #priorSaleAmount: Replace zero with Nan
-    #priorSaleDate: Split
-    # priorSaleDayOfWeek
-    # priorSaleWeek
-    # priorSaleYear
     
     day_range = [0,6]
     week_range = [0,52]
     month_range = [0,11]
     year_range = [1900, 2020]
     transformations = [
-        ('zipcode',OneHotEncoder()),
+        ('zipcode',LabelEncoder()),
         ('latitude', StandardScaler()),
         ('logitude', StandardScaler()),
         ('bedrooms', StandardScaler()),
@@ -160,62 +237,20 @@ def featurize(features):
         ('priorSaleMonth',MinMaxScaler()),
         ('priorSaleYear',MinMaxScaler()),
     ]
-    lll=filter(lambda x: x[0] in features, transformations)
-    return DataFrameMapper(lll)
+    return DataFrameMapper(filter(lambda x: x[0] in features, transformations))
+
+
+def print_metrics(y, y_pred):
+    print(np.sqrt(metrics.mean_squared_error(y,y_pred)))
+    print(metrics.mean_absolute_error(y,y_pred))
+    print(metrics.r2_score(y,y_pred))
+    print(abs_mean_relative_error(y,y_pred))
 
 
 def abs_mean_relative_error(y,y_pred):
         return np.mean(np.abs(y-y_pred)/(y))
 
-
-df = pd.read_csv('single_family_home_values.csv')
-
-
-print('Preparing Data: cleaning data')
-not_useful_fields = ['id','city','state', 'address']
-date_fields = ['lastSaleDate', 'priorSaleDate']
-required_fields = ['latitude','longitude','zipcode','bedrooms',
-                   'bathrooms','rooms','squareFootage',
-                   'lotSize','yearBuilt',
-                   'lastSaleDate','estimated_value']
-zero_to_nan_fields = None
-remove_outliers=False
-df2 = prepare_data(df, not_useful_fields=not_useful_fields, 
-        date_fields=date_fields,
-        remove_outliers=remove_outliers,
-        required_fields=required_fields,
-        zero_to_nan_fields=zero_to_nan_fields,
-        )
-
-print('Preparing Data: splitting test/train/validation')
-df_train, df_test, df_validation = train_validate_test_split(df2)
-
-X_test = df_test[df_train.columns.drop('estimated_value')]
-y_test = np.log(df_test['estimated_value'] + 1)
-
-
-'''
-#features = ('latitude', 'longitude')
-#featurize(features).fit_transform(df2)
-print("Setting up pipeline")
-features = ('latitude')
-features = required_fields
-
-#: Note imputer will strip away column heads, it has to be after featurize
-pipeline = Pipeline([
-          ('featurize', featurize(features)), 
-          ('imputer', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
-          ('forest', RandomForestRegressor()),
-            ])
-print("Fitting data")
-model = pipeline.fit(X = X, y = y)
-print("Evaluating model")
-y_pred = model.predict(X)
-plt.plot(y, y_pred,'.')
-y_max = np.max((y, y_pred))
-plt.plot((0,y_max), (0,y_max),color='black')
-plt.show()
-'''
+#TODO: Zipcode onehot encoding or with LabelEncoding
 #TODO: Evaluate different feature sets. 
 #TODO: error handling of input data types
 #TODO: Ensure more broad testing of input data types (Nan/Zero handling)
@@ -223,7 +258,5 @@ plt.show()
 #TODO: Github repository
 #TODO: Robust deployment on different machine
 
-#from IPython import embed
-#embed()
 # IDEA: Cluster based on missing data!
 # Ensure zipcode
