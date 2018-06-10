@@ -33,6 +33,110 @@ def train_validate_test_split(df, train_percent=.6, validate_percent=.2, seed=No
     return df_train, df_validate, df_test
     
 
+class PrepareDate(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        None
+    
+    def fit(self):
+        None
+
+    def transform(self):
+        None
+
+class RemoveNotUsefulFields(BaseEstimator, TransformerMixin):
+    def __init__(self, not_useful_fields):
+        self.not_useful_fields = not_useful_fields
+    def __fit__(self, df, y):
+        return remove_not_useful_fields(df, self.not_useful_fields)
+    def __transform__(self, df):
+        return remove_not_useful_fields(df, self.not_useful_fields)
+
+
+class DropRowsMissingFields(BaseEstimator, TransformerMixin):
+    def __init__(self, required_fields):
+        self.required_fields = required_fields
+    def __fit__(self, X, y):
+        for field in self.required_fields:
+            df.drop(df.index[pd.isnull(df[field])], inplace=True)
+        return df
+    def __transform(self, df):
+        return df
+
+
+class ConvertDates(BaseEstimator, TransformerMixin):
+    def __init__(self, date_fields):
+        self.date_fields = date_fields
+        self.new_date_fields = []
+    def __fit__(self, df, y):
+        df, new_date_fields = convert_dates(df, date_fields)
+        self.new_date_fields = new_date_fields
+        return df
+    def __transform__(self, df, y):
+        df, new_date_fields = convert_dates(df, date_fields)
+        self.new_date_fields = new_date_fields
+        return df
+
+
+class ZeroToNanFields(BaseEstimator, TransformerMixin):
+    def __init__(self, zero_to_nan_fields):
+        self.zero_to_nan_fields = zero_to_nan_fields
+    def __fit__(self, df, y):
+        # Replace zeros with nan for imputation down the way
+        if self.zero_to_nan_fields is not None:
+            for field in self.zero_to_nan_fields:
+                df[df[field] == 0, field] = np.nan
+        return df
+    def __transform__(self, df):
+        # Replace zeros with nan for imputation down the way
+        if self.zero_to_nan_fields is not None:
+            for field in self.zero_to_nan_fields:
+                df[df[field] == 0, field] = np.nan
+        return df
+
+
+class NanToZeroFields(BaseEstimator, TransformerMixin):
+    def __init__(self, zero_to_nan_fields):
+        self.zero_to_nan_fields = zero_to_nan_fields
+    def __fit__(self, df, y):
+        # Replace zeros with nan for imputation down the way
+        if self.nan_to_zero_fields is not None:
+            for field in self.nan_to_zero_fields:
+                df.loc[pd.isnull(df[field]), field] = 0
+            return df
+    def __transform__(self, df):
+        # Replace zeros with nan for imputation down the way
+        if self.nan_to_zero_fields is not None:
+            for field in self.nan_to_zero_fields:
+                df.loc[pd.isnull(df[field]), field] = 0
+            return df
+'''
+class PrepareDate(BaseEstimator, TransformerMixin):
+    def __init__(self, not_useful_fields=None,  
+                date_fields=None, 
+                remove_outliers=False, 
+                required_fields=None,
+                zero_to_nan_fields=None,
+                nan_to_zero_fields=None, 
+                categorical_fields=None):
+        #TODO: make this general so i'm not copying and pasting this
+        self.not_useful_fields=None,
+        self.date_fields=date_fields
+        self.remove_outliers=remove_outliers
+        self.required_fields=required_fields
+        self.zero_to_nan_fields=zero_to_nan_fields
+        self.nan_to_zero_fields=nan_to_zero_field
+        self.categorical_fields=categorical_fields
+
+    def __fit__(self, df, y):
+        df.drop_duplicates(inplace=True)
+        # Remove entire fields as they are not needed. 
+        df = remove_not_useful_fields(df, self.not_useful_fields)
+
+        return df
+    def __transform__(self, df):
+        return df
+'''
+
 def prepare_data(df, not_useful_fields=None,  
                 date_fields=None, 
                 remove_outliers=False, 
@@ -59,7 +163,7 @@ def prepare_data(df, not_useful_fields=None,
     # Replace zeros with nan for imputation down the way
     if zero_to_nan_fields is not None:
         for field in zero_to_nan_fields:
-            df[field][df[field] == 0] = np.nan
+            df[df[field] == 0, field] = np.nan
     # Replace nans with zeros for pseudo classification (due to nan's being present)
     if nan_to_zero_fields is not None:
         for field in nan_to_zero_fields:
@@ -78,7 +182,7 @@ def prepare_data(df, not_useful_fields=None,
     return df, new_fields+new_categorical_fields
 
 
-class TransformZipCodes(BaseEstimator, TransformerMixin):
+class ImputeZipCodes(BaseEstimator, TransformerMixin):
     # This class will make zipcodes become 
     # for data not containing the zipcode, it will find the 
     # center of zipcode lat-long data and estimate a zipcode
@@ -92,7 +196,7 @@ class TransformZipCodes(BaseEstimator, TransformerMixin):
     def __init__(self):
         self.zip_code_lat_long_df = pd.DataFrame()
 
-    def fit(self, X):
+    def fit(self, X, y):
         self.zip_code_lat_long_df = \
             pd.groupby(X,'zipcode')['latitude','longitude'].mean().add_suffix('_mean') 
         return self
@@ -121,7 +225,8 @@ def smallest_gcd_distance_ndx(lat1, lng1, lat2, lng2):
     find the array index of the smallest great-circal distance
     '''
     return np.argmin(gcd_vec(lat1, lng1, lat2, lng2))
-    
+ 
+   
 def gcd_vec(lat1, lng1, lat2, lng2):
     '''
     Calculate great circle distance.
@@ -174,6 +279,9 @@ def remove_not_useful_fields(df, not_useful_fields=None):
 def convert_dates(df, date_fields):
     # This function will convert date strings into numerical
     # forms that are more amenable for use by ML models
+    if date_fields is None:
+        return df
+
     new_fields=[]
     for field in date_fields:
         d = pd.Series(pd.to_datetime(df[field],format='%Y-%m-%d'))
@@ -223,7 +331,7 @@ def print_metrics(y, y_pred):
     print("Sqrt mse: {}".format(np.sqrt(metrics.mean_squared_error(y,y_pred))))
     print("Mean absolute error: {}".format(metrics.mean_absolute_error(y,y_pred)))
     print("R2 score: {}".format(metrics.r2_score(y,y_pred)))
-    print("Absolute mean relative error: {}".format(abs_mean_relative_error(y,y_pred))
+    print("Absolute mean relative error: {}".format(abs_mean_relative_error(y,y_pred)))
 
 
 def abs_mean_relative_error(y,y_pred):
