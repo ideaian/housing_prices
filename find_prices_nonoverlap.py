@@ -33,46 +33,24 @@ def train_validate_test_split(df, train_percent=.6, validate_percent=.2, seed=No
     return df_train, df_validate, df_test
     
 
-class PrepareDate(BaseEstimator, TransformerMixin):
-    def __init__(self):
-        None
-    
-    def fit(self):
-        None
-
-    def transform(self):
-        None
-
 class RemoveNotUsefulFields(BaseEstimator, TransformerMixin):
     def __init__(self, not_useful_fields):
         self.not_useful_fields = not_useful_fields
-    def __fit__(self, df, y):
+    def fit(self, df, y):
+        return self
+    def transform(self, df):
         return remove_not_useful_fields(df, self.not_useful_fields)
-    def __transform__(self, df):
-        return remove_not_useful_fields(df, self.not_useful_fields)
-
-
-class DropRowsMissingFields(BaseEstimator, TransformerMixin):
-    def __init__(self, required_fields):
-        self.required_fields = required_fields
-    def __fit__(self, X, y):
-        for field in self.required_fields:
-            df.drop(df.index[pd.isnull(df[field])], inplace=True)
-        return df
-    def __transform(self, df):
-        return df
 
 
 class ConvertDates(BaseEstimator, TransformerMixin):
+    #: TODO: Generalize this to allow for different date-type outputs to become features
     def __init__(self, date_fields):
         self.date_fields = date_fields
         self.new_date_fields = []
-    def __fit__(self, df, y):
-        df, new_date_fields = convert_dates(df, date_fields)
-        self.new_date_fields = new_date_fields
-        return df
-    def __transform__(self, df, y):
-        df, new_date_fields = convert_dates(df, date_fields)
+    def fit(self, df, y):
+        return self
+    def transform(self, df):
+        df, new_date_fields = convert_dates_helper(df, self.date_fields)
         self.new_date_fields = new_date_fields
         return df
 
@@ -80,62 +58,73 @@ class ConvertDates(BaseEstimator, TransformerMixin):
 class ZeroToNanFields(BaseEstimator, TransformerMixin):
     def __init__(self, zero_to_nan_fields):
         self.zero_to_nan_fields = zero_to_nan_fields
-    def __fit__(self, df, y):
+    def fit(self, df, y):
+        return self
+    def transform(self, df):
         # Replace zeros with nan for imputation down the way
         if self.zero_to_nan_fields is not None:
             for field in self.zero_to_nan_fields:
-                df[df[field] == 0, field] = np.nan
-        return df
-    def __transform__(self, df):
-        # Replace zeros with nan for imputation down the way
-        if self.zero_to_nan_fields is not None:
-            for field in self.zero_to_nan_fields:
-                df[df[field] == 0, field] = np.nan
+                if field in df.keys():
+                    df[df[field] == 0, field] = np.nan
         return df
 
 
 class NanToZeroFields(BaseEstimator, TransformerMixin):
-    def __init__(self, zero_to_nan_fields):
-        self.zero_to_nan_fields = zero_to_nan_fields
-    def __fit__(self, df, y):
+    def __init__(self, nan_to_zero_fields):
+        self.nan_to_zero_fields = nan_to_zero_fields
+    def fit(self, df, y):
+        return self
+    def transform(self, df):
         # Replace zeros with nan for imputation down the way
         if self.nan_to_zero_fields is not None:
             for field in self.nan_to_zero_fields:
-                df.loc[pd.isnull(df[field]), field] = 0
-            return df
-    def __transform__(self, df):
-        # Replace zeros with nan for imputation down the way
-        if self.nan_to_zero_fields is not None:
-            for field in self.nan_to_zero_fields:
-                df.loc[pd.isnull(df[field]), field] = 0
-            return df
-'''
-class PrepareDate(BaseEstimator, TransformerMixin):
-    def __init__(self, not_useful_fields=None,  
+                if field in df.keys():
+                    df.loc[pd.isnull(df[field]), field] = 0
+        return df
+
+
+class KeepRequiredFields(BaseEstimator, TransformerMixin):
+    def __init__(self,required_fields):
+        self.required_fields = required_fields
+    def fit(self, df, y):
+        return self
+    def transform(self,df):
+        for key in iter(df.keys()):
+            if key not in self.required_fields:
+                df.drop(labels=key, axis=1, inplace=True)
+        import ipdb; ipdb.set_trace()
+        return df
+        
+
+class PrepareData(BaseEstimator, TransformerMixin):
+    def __init__(self, required_fields,
                 date_fields=None, 
-                remove_outliers=False, 
-                required_fields=None,
                 zero_to_nan_fields=None,
-                nan_to_zero_fields=None, 
-                categorical_fields=None):
-        #TODO: make this general so i'm not copying and pasting this
-        self.not_useful_fields=None,
-        self.date_fields=date_fields
-        self.remove_outliers=remove_outliers
-        self.required_fields=required_fields
-        self.zero_to_nan_fields=zero_to_nan_fields
-        self.nan_to_zero_fields=nan_to_zero_field
-        self.categorical_fields=categorical_fields
+                nan_to_zero_fields=None):
+        self.keep_required_fields = KeepRequiredFields(required_fields)
+        self.nan_to_zero = NanToZeroFields(nan_to_zero_fields=nan_to_zero_fields)
+        self.zero_to_nan = ZeroToNanFields(zero_to_nan_fields=zero_to_nan_fields)
+        self.imp_zip_codes = ImputeZipCodes()
+        #TODO: use the ConvertDates.new_date_fields and then plug in with featurize
+        self.convert_dates = ConvertDates(date_fields)
 
-    def __fit__(self, df, y):
-        df.drop_duplicates(inplace=True)
-        # Remove entire fields as they are not needed. 
-        df = remove_not_useful_fields(df, self.not_useful_fields)
+    def fit(self, df, y):
+        self.zero_to_nan.fit(df, y)
+        self.nan_to_zero.fit(df, y)
+        self.imp_zip_codes.fit(df, y)
+        self.convert_dates.fit(df, y) 
 
+        return self
+
+    def transform(self, df):
+        import ipdb; ipdb.set_trace()
+        df = self.keep_required_fields.transform(df)
+        df = self.zero_to_nan.transform(df)
+        df = self.nan_to_zero.transform(df)
+        df = self.imp_zip_codes.transform(df)
+        df = self.convert_dates.transform(df) 
         return df
-    def __transform__(self, df):
-        return df
-'''
+
 
 def prepare_data(df, not_useful_fields=None,  
                 date_fields=None, 
@@ -176,10 +165,9 @@ def prepare_data(df, not_useful_fields=None,
         print('Not Implemented')
         None
 
-    df, new_fields = convert_dates(df, date_fields)
-    df, new_categorical_fields = convert_to_categorical_features(df, categorical_fields)
+    df, new_fields = convert_dates_helper(df, date_fields)
 
-    return df, new_fields+new_categorical_fields
+    return df, new_fields
 
 
 class ImputeZipCodes(BaseEstimator, TransformerMixin):
@@ -254,14 +242,6 @@ def gcd_vec(lat1, lng1, lat2, lng2):
     return arc * 6373
 
 
-def convert_to_categorical_features(df, categorical_fields):
-    # There is possibly a better way of doing this, but with dataframe_mapper and sklearn 
-    # categorical features doesn't work. To revise this involves changing the code to
-    # not rely on dataframe_mapper for featurize
-
-    return df, []
-
-
 def remove_not_useful_fields(df, not_useful_fields=None):
     # This function will remove entire columns of a dataframe that are 
     # not needed for the analysis (meta or highly duplicated info)
@@ -276,7 +256,7 @@ def remove_not_useful_fields(df, not_useful_fields=None):
     return df
 
 
-def convert_dates(df, date_fields):
+def convert_dates_helper(df, date_fields):
     # This function will convert date strings into numerical
     # forms that are more amenable for use by ML models
     if date_fields is None:
@@ -284,6 +264,9 @@ def convert_dates(df, date_fields):
 
     new_fields=[]
     for field in date_fields:
+        if field not in df.keys():
+            print("Warning, field {} not in dataframe".format(field))
+            continue
         d = pd.Series(pd.to_datetime(df[field],format='%Y-%m-%d'))
         
         df[field+'DayOfWeek'] = d.dt.dayofweek
@@ -294,8 +277,9 @@ def convert_dates(df, date_fields):
         new_fields.append(field+'WeekOfYear')
         new_fields.append(field+'Month')
         new_fields.append(field+'Year')
+        #df.drop(labels=field, axis=1, inplace=True)
     
-    return remove_not_useful_fields(df, date_fields), new_fields
+    return df, new_fields
         
 
 def featurize(features):
@@ -337,7 +321,6 @@ def print_metrics(y, y_pred):
 def abs_mean_relative_error(y,y_pred):
         return np.mean(np.abs(y-y_pred)/(y))
 
-#TODO: Zipcode onehot encoding or with LabelEncoding
 #TODO: Evaluate different feature sets. 
 #TODO: error handling of input data types
 #TODO: Ensure more broad testing of input data types (Nan/Zero handling)
@@ -345,5 +328,3 @@ def abs_mean_relative_error(y,y_pred):
 #TODO: Github repository
 #TODO: Robust deployment on different machine
 
-# IDEA: Cluster based on missing data!
-# Ensure zipcode
