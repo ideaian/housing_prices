@@ -4,8 +4,8 @@ import numpy as np
 import seaborn as sns
 from sklearn import preprocessing
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import( 
-    LabelEncoder, LabelBinarizer, MinMaxScaler, StandardScaler, LabelEncoder, Imputer
+from sklearn.preprocessing import(
+    LabelEncoder, LabelBinarizer, MinMaxScaler, StandardScaler, LabelEncoder, Imputer, OneHotEncoder
 )
 # CategoricalEncoder
 from sklearn_pandas import DataFrameMapper
@@ -21,8 +21,9 @@ from sklearn import metrics
 from sklearn.feature_extraction.text import CountVectorizer
 
 from sklearn.base import BaseEstimator, TransformerMixin
-        
-def train_validate_test_split(df, train_percent=.6, validate_percent=.2, seed=None):
+
+
+def train_validate_test_split(df, train_percent=.8, validate_percent=.05, seed=None):
     np.random.seed(seed)
     perm = np.random.permutation(len(df))
     m = len(df.index)
@@ -32,13 +33,15 @@ def train_validate_test_split(df, train_percent=.6, validate_percent=.2, seed=No
     df_validate = df.iloc[perm[train_end:validate_end]]
     df_test = df.iloc[perm[validate_end:]]
     return df_train, df_validate, df_test
-    
+
 
 class RemoveNotUsefulFields(BaseEstimator, TransformerMixin):
     def __init__(self, not_useful_fields):
         self.not_useful_fields = not_useful_fields
+
     def fit(self, df, y):
         return self
+
     def transform(self, df):
         return remove_not_useful_fields(df, self.not_useful_fields)
 
@@ -48,8 +51,10 @@ class ConvertDates(BaseEstimator, TransformerMixin):
     def __init__(self, date_fields):
         self.date_fields = date_fields
         self.new_date_fields = []
+
     def fit(self, df, y):
         return self
+
     def transform(self, df):
         df, new_date_fields = convert_dates_helper(df, self.date_fields)
         self.new_date_fields = new_date_fields
@@ -59,8 +64,10 @@ class ConvertDates(BaseEstimator, TransformerMixin):
 class ZeroToNanFields(BaseEstimator, TransformerMixin):
     def __init__(self, zero_to_nan_fields):
         self.zero_to_nan_fields = zero_to_nan_fields
+
     def fit(self, df, y):
         return self
+
     def transform(self, df):
         # Replace zeros with nan for imputation down the way
         if self.zero_to_nan_fields is not None:
@@ -73,8 +80,10 @@ class ZeroToNanFields(BaseEstimator, TransformerMixin):
 class NanToZeroFields(BaseEstimator, TransformerMixin):
     def __init__(self, nan_to_zero_fields):
         self.nan_to_zero_fields = nan_to_zero_fields
+
     def fit(self, df, y):
         return self
+
     def transform(self, df):
         # Replace zeros with nan for imputation down the way
         if self.nan_to_zero_fields is not None:
@@ -85,34 +94,36 @@ class NanToZeroFields(BaseEstimator, TransformerMixin):
 
 
 class KeepRequiredFields(BaseEstimator, TransformerMixin):
-    def __init__(self,required_fields):
+    def __init__(self, required_fields):
         self.required_fields = required_fields
+
     def fit(self, df, y):
         return self
-    def transform(self,df):
+
+    def transform(self, df):
         for key in iter(df.keys()):
             if key not in self.required_fields:
                 df.drop(labels=key, axis=1, inplace=True)
         return df
-        
+
 
 class PrepareData(BaseEstimator, TransformerMixin):
     def __init__(self, required_fields,
-                date_fields=None, 
-                zero_to_nan_fields=None,
-                nan_to_zero_fields=None):
+                 date_fields=None,
+                 zero_to_nan_fields=None,
+                 nan_to_zero_fields=None):
         self.keep_required_fields = KeepRequiredFields(required_fields)
-        self.nan_to_zero = NanToZeroFields(nan_to_zero_fields=nan_to_zero_fields)
-        self.zero_to_nan = ZeroToNanFields(zero_to_nan_fields=zero_to_nan_fields)
-        self.imp_zip_codes = ImputeZipCodes()
-        #TODO: use the ConvertDates.new_date_fields and then plug in with featurize
+        self.nan_to_zero = NanToZeroFields(
+            nan_to_zero_fields=nan_to_zero_fields)
+        self.zero_to_nan = ZeroToNanFields(
+            zero_to_nan_fields=zero_to_nan_fields)
+        # TODO: use the ConvertDates.new_date_fields and then plug in with featurize
         self.convert_dates = ConvertDates(date_fields)
 
     def fit(self, df, y):
         self.zero_to_nan.fit(df, y)
         self.nan_to_zero.fit(df, y)
-        self.imp_zip_codes.fit(df, y)
-        self.convert_dates.fit(df, y) 
+        self.convert_dates.fit(df, y)
 
         return self
 
@@ -120,45 +131,45 @@ class PrepareData(BaseEstimator, TransformerMixin):
         df = self.keep_required_fields.transform(df)
         df = self.zero_to_nan.transform(df)
         df = self.nan_to_zero.transform(df)
-        df = self.imp_zip_codes.transform(df)
-        df = self.convert_dates.transform(df) 
+        df = self.convert_dates.transform(df)
         return df
 
 
 class ImputeZipCodes(BaseEstimator, TransformerMixin):
-    # This class will make zipcodes become 
-    # for data not containing the zipcode, it will find the 
+    # This class will make zipcodes become
+    # for data not containing the zipcode, it will find the
     # center of zipcode lat-long data and estimate a zipcode
 
     # A better way would be to use a web API to search the address and extract the zipcode
     # I'm going to do this first.
 
     # For the future: make this a general imputer that provides classification for training data
-    # using clustering methods. 
-    
+    # using clustering methods.
+
     def __init__(self):
         self.zip_code_lat_long_df = pd.DataFrame()
 
     def fit(self, X, y):
         self.zip_code_lat_long_df = \
-            pd.groupby(X,'zipcode')['latitude','longitude'].mean().add_suffix('_mean') 
+            pd.groupby(X, 'zipcode')['latitude',
+                                     'longitude'].mean().add_suffix('_mean')
         return self
 
     def transform(self, X):
         bad_index = ~X['zipcode'].isin(self.zip_code_lat_long_df.index)
-        dd = X[bad_index][['latitude','longitude']]
+        dd = X[bad_index][['latitude', 'longitude']]
 
         if len(dd) == 0:
             # No unseen zipcodes were found
             return X
-        
-        ndx =(dd[['latitude','longitude']]).reset_index().apply(
-                                    lambda x: smallest_gcd_distance_ndx(
-                                        self.zip_code_lat_long_df.latitude_mean.values, 
-                                        self.zip_code_lat_long_df.longitude_mean.values, 
-                                        x[0],x[1]), 
-                                    axis=1)
-        X.loc[bad_index,'zipcode'] = \
+
+        ndx = (dd[['latitude', 'longitude']]).reset_index().apply(
+            lambda x: smallest_gcd_distance_ndx(
+                self.zip_code_lat_long_df.latitude_mean.values,
+                self.zip_code_lat_long_df.longitude_mean.values,
+                x[0], x[1]),
+            axis=1)
+        X.loc[bad_index, 'zipcode'] = \
             self.zip_code_lat_long_df.iloc[ndx].index
         return X
 
@@ -168,8 +179,8 @@ def smallest_gcd_distance_ndx(lat1, lng1, lat2, lng2):
     find the array index of the smallest great-circal distance
     '''
     return np.argmin(gcd_vec(lat1, lng1, lat2, lng2))
- 
-   
+
+
 def gcd_vec(lat1, lng1, lat2, lng2):
     '''
     Calculate great circle distance.
@@ -198,12 +209,12 @@ def gcd_vec(lat1, lng1, lat2, lng2):
 
 
 def remove_not_useful_fields(df, not_useful_fields=None):
-    # This function will remove entire columns of a dataframe that are 
+    # This function will remove entire columns of a dataframe that are
     # not needed for the analysis (meta or highly duplicated info)
     if not_useful_fields is None:
         return df
 
-    try: #Handle different versions of pandas
+    try:  # Handle different versions of pandas
         df.drop(columns=not_useful_fields, inplace=True)
     except TypeError:
         df.drop(not_useful_fields, axis=1, inplace=True)
@@ -217,80 +228,120 @@ def convert_dates_helper(df, date_fields):
     if date_fields is None:
         return df
 
-    new_fields=[]
+    new_fields = []
     for field in date_fields:
         if field not in df.keys():
             print("Warning, field {} not in dataframe".format(field))
             continue
-        d = pd.Series(pd.to_datetime(df[field],format='%Y-%m-%d'))
-        
-        df[field+'DayOfWeek'] = d.dt.dayofweek
-        df[field+'WeekOfYear'] = d.dt.weekofyear
-        df[field+'Month'] = d.dt.month
-        df[field+'Year'] = d.dt.year
-        new_fields.append(field+'DayOfWeek')
-        new_fields.append(field+'WeekOfYear')
-        new_fields.append(field+'Month')
-        new_fields.append(field+'Year')
-        #df.drop(labels=field, axis=1, inplace=True)
-    
-    return df, new_fields
-        
+        d = pd.Series(pd.to_datetime(df[field], format='%Y-%m-%d'))
 
-def featurize(features):
-    #TODO: This needs to be interal to prepare_data so that we can keep fields consistent
+        df[field + 'DayOfWeek'] = d.dt.dayofweek
+        df[field + 'WeekOfYear'] = d.dt.weekofyear
+        df[field + 'Month'] = d.dt.month
+        df[field + 'Year'] = d.dt.year
+        new_fields.append(field + 'DayOfWeek')
+        new_fields.append(field + 'WeekOfYear')
+        new_fields.append(field + 'Month')
+        new_fields.append(field + 'Year')
+        #df.drop(labels=field, axis=1, inplace=True)
+
+    return df, new_fields
+
+
+def imputerize_df(features, df_out):
+    # TODO: This needs to be interal to prepare_data so that we can keep fields consistent
     # namely, this is not general enough
-    day_range = [0,6]
-    week_range = [0,52]
-    month_range = [0,11]
+    print('Imputerize')
+    transformations = [
+        (['bedrooms', 'bathrooms', 'rooms'],  
+            Imputer(missing_values=np.nan, strategy="median", axis=0)),
+        (['zipcode','hasPriorSale','latitude', 'longitude','squareFootage', 
+          'lotSize', 'yearBuilt', 'squareFootageOverLotSize',
+          'bathroomsPerRooms', 'roomsPerSquareFootage',
+          'lastSaleAmount', 'lastSaleDateDayOfWeek',
+          'lastSaleDateWeekOfYear', 'lastSaleDateMonth', 'lastSaleDateYear',
+          'priorSaleAmount', 'priorSaleDateDayOfWeek',
+          'priorSaleDateWeekOfYear', 'priorSaleDateMonth', 'priorSaleDateYear'], 
+        ('zipcode', ImputeZipCodes()),
+          Imputer(missing_values=np.nan, strategy="mean", axis=0))
+    ]
+    for feature in features:
+        transform_fields = [transform[0] for transform in transformations] 
+        transform_fields = [item for sublist in transform_fields for item in sublist if len(item)>1]
+        if feature not in transform_fields:
+            print("Warning, feature {} not in the list {}".format(feature, transform_fields))
+    return DataFrameMapper(filter(lambda x: x[0] in features, transformations), df_out=df_out)
+
+
+def featurize_df(features, df_out):
+    print('Featurize')
+    # TODO: This needs to be interal to prepare_data so that we can keep fields consistent
+    # namely, this is not general enough
+    day_range = [0, 6]
+    week_range = [0, 52]
+    month_range = [0, 11]
     year_range = [1900, 2020]
     transformations = [
-        ('zipcode',LabelEncoder()),
+        ('zipcode', LabelEncoder()),
+        ('hasPriorSale', LabelEncoder()),
         ('latitude', StandardScaler()),
-        ('logitude', StandardScaler()),
+        ('longitude', StandardScaler()),
         ('bedrooms', StandardScaler()),
         ('bathrooms', StandardScaler()),
         ('rooms', StandardScaler()),
-        ('squareFootage', StandardScaler()),                                       
+        ('squareFootage', StandardScaler()),
         ('lotSize', StandardScaler()),
+        ('yearBuilt', MinMaxScaler()),
+        ('squareFootageOverLotSize', StandardScaler()),
+        ('bathroomsPerRooms', StandardScaler()),
+        ('roomsPerSquareFootage', StandardScaler()),
         ('lastSaleAmount', StandardScaler()),
-        ('lastSaleDayOfWeek', MinMaxScaler()),
-        ('lastSaleWeekOfYear',MinMaxScaler()),
-        ('lastSaleMonth',MinMaxScaler()),
-        ('lastSaleYear',MinMaxScaler()),
-        ('priorSaleAmount', StandardScaler()),
-        ('priorSaleDayOfWeek',MinMaxScaler()),
-        ('priorSaleWeekOfYear',MinMaxScaler()),
-        ('priorSaleMonth',MinMaxScaler()),
-        ('priorSaleYear',MinMaxScaler()),
+        ('lastSaleDateDayOfWeek', MinMaxScaler()),
+        ('lastSaleDateWeekOfYear', MinMaxScaler()),
+        ('lastSaleDateMonth', MinMaxScaler()),
+        ('lastSaleDateYear', MinMaxScaler()),
+        ('priorSaleAmountx', StandardScaler()),
+        ('priorSaleDaxteDayOfWeek', MinMaxScaler()),
+        ('priorSaleDatxeWeekOfYear', MinMaxScaler()),
+        ('priorSaleDatexMonth', MinMaxScaler()),
+        ('priorSaleDateYxear', MinMaxScaler()),
     ]
-    return DataFrameMapper(filter(lambda x: x[0] in features, transformations))
+    for feature in features:
+        transform_fields = np.array(transformations)[:, 0].tolist()
+        transform_fields = [item for sublist in transform_fields for item in sublist if len(item)>1]
+        if feature not in transform_fields:
+            print("Warning, feature {} not in the list {}".format(feature, transform_fields))
+    return DataFrameMapper(filter(lambda x: x[0] in features, transformations), df_out=df_out)
 
 
 class StreetVectorizer(BaseEstimator, TransformerMixin):
     def __init__(self):
-        self.cv = CountVectorizer(analyzer='word', token_pattern='[A-Za-z]{3,}')
-    def fit(self,df, y):
+        self.cv = CountVectorizer(
+            analyzer='word', token_pattern='[A-Za-z]{3,}')
+
+    def fit(self, df, y):
         self.cv.fit(df['address'])
         return self
+
     def transform(self, df):
         return self.cv.transform(df['address'])
 
 
 def print_metrics(y, y_pred):
-    print("Sqrt mse: {}".format(np.sqrt(metrics.mean_squared_error(y,y_pred))))
-    print("Mean absolute error: {}".format(metrics.mean_absolute_error(y,y_pred)))
-    print("R2 score: {}".format(metrics.r2_score(y,y_pred)))
-    print("Absolute mean relative error: {}".format(abs_mean_relative_error(y,y_pred)))
+    print("Sqrt mse: {}".format(np.sqrt(metrics.mean_squared_error(y, y_pred))))
+    print("Mean absolute error: {}".format(
+        metrics.mean_absolute_error(y, y_pred)))
+    print("R2 score: {}".format(metrics.r2_score(y, y_pred)))
+    print("Absolute mean relative error: {}".format(
+        abs_mean_relative_error(y, y_pred)))
 
 
-def abs_mean_relative_error(y,y_pred):
-        return np.mean(np.abs(y-y_pred)/(y))
+def abs_mean_relative_error(y, y_pred):
+    return np.mean(np.abs(y - y_pred) / (y))
 
-#TODO: Evaluate different feature sets. 
-#TODO: error handling of input data types
-#TODO: Ensure more broad testing of input data types (Nan/Zero handling)
-#TODO: Improve plotting/metric evaluation
-#TODO: Github repository
-#TODO: Robust deployment on different machine
-
+# TODO: Evaluate different feature sets.
+# TODO: error handling of input data types
+# TODO: Ensure more broad testing of input data types (Nan/Zero handling)
+# TODO: Improve plotting/metric evaluation
+# TODO: Github repository
+# TODO: Robust deployment on different machine
