@@ -119,12 +119,12 @@ class PrepareData(BaseEstimator, TransformerMixin):
             zero_to_nan_fields=zero_to_nan_fields)
         # TODO: use the ConvertDates.new_date_fields and then plug in with featurize
         self.convert_dates = ConvertDates(date_fields)
-
+        self.impute_zip_codes = ImputeZipCodes()
     def fit(self, df, y):
         self.zero_to_nan.fit(df, y)
         self.nan_to_zero.fit(df, y)
         self.convert_dates.fit(df, y)
-
+        self.impute_zip_codes.fit(df, y)
         return self
 
     def transform(self, df):
@@ -132,6 +132,7 @@ class PrepareData(BaseEstimator, TransformerMixin):
         df = self.zero_to_nan.transform(df)
         df = self.nan_to_zero.transform(df)
         df = self.convert_dates.transform(df)
+        df = self.impute_zip_codes.transform(df)
         return df
 
 
@@ -247,27 +248,47 @@ def convert_dates_helper(df, date_fields):
 
     return df, new_fields
 
+class Identity(BaseEstimator, TransformerMixin):
+    def __init__(self):
+        None
+    def fit(self, X, y):
+        return self
+    def transform(self, X):
+        return X
+
 
 def imputerize_df(features, df_out):
     # TODO: This needs to be interal to prepare_data so that we can keep fields consistent
     # namely, this is not general enough
     print('Imputerize')
     transformations = [
-        (['bedrooms', 'bathrooms', 'rooms'],  
-            Imputer(missing_values=np.nan, strategy="median", axis=0)),
-        (['zipcode','hasPriorSale','latitude', 'longitude','squareFootage', 
-          'lotSize', 'yearBuilt', 'squareFootageOverLotSize',
-          'bathroomsPerRooms', 'roomsPerSquareFootage',
-          'lastSaleAmount', 'lastSaleDateDayOfWeek',
-          'lastSaleDateWeekOfYear', 'lastSaleDateMonth', 'lastSaleDateYear',
-          'priorSaleAmount', 'priorSaleDateDayOfWeek',
-          'priorSaleDateWeekOfYear', 'priorSaleDateMonth', 'priorSaleDateYear'], 
-        ('zipcode', ImputeZipCodes()),
-          Imputer(missing_values=np.nan, strategy="mean", axis=0))
+        ('hasPriorSale', Imputer(missing_values=np.nan, strategy="median", axis=0)),
+        ('latitude', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('longitude', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('bedrooms', Imputer(missing_values=np.nan, strategy="median", axis=0)),
+        ('bathrooms', Imputer(missing_values=np.nan, strategy="median", axis=0)),
+        ('rooms', Imputer(missing_values=np.nan, strategy="median", axis=0)),
+        ('squareFootage', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('lotSize', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('yearBuilt', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('squareFootageOverLotSize', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('bathroomsPerRooms', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('roomsPerSquareFootage', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('lastSaleAmount', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('lastSaleDateDayOfWeek', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('lastSaleDateWeekOfYear', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('lastSaleDateMonth', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('lastSaleDateYear', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('priorSaleAmount', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('priorSaleDateDayOfWeek', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('priorSaleDateWeekOfYear', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('priorSaleDateMonth', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('priorSaleDateYear', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('zipcode', Identity()),
     ]
     for feature in features:
         transform_fields = [transform[0] for transform in transformations] 
-        transform_fields = [item for sublist in transform_fields for item in sublist if len(item)>1]
+        #transform_fields = [item for sublist in transform_fields for item in sublist if len(item)>1]
         if feature not in transform_fields:
             print("Warning, feature {} not in the list {}".format(feature, transform_fields))
     return DataFrameMapper(filter(lambda x: x[0] in features, transformations), df_out=df_out)
@@ -301,14 +322,14 @@ def featurize_df(features, df_out):
         ('lastSaleDateMonth', MinMaxScaler()),
         ('lastSaleDateYear', MinMaxScaler()),
         ('priorSaleAmountx', StandardScaler()),
-        ('priorSaleDaxteDayOfWeek', MinMaxScaler()),
-        ('priorSaleDatxeWeekOfYear', MinMaxScaler()),
-        ('priorSaleDatexMonth', MinMaxScaler()),
-        ('priorSaleDateYxear', MinMaxScaler()),
+        ('priorSaleDateDayOfWeek', MinMaxScaler()),
+        ('priorSaleDateWeekOfYear', MinMaxScaler()),
+        ('priorSaleDateMonth', MinMaxScaler()),
+        ('priorSaleDateYear', MinMaxScaler()),
     ]
     for feature in features:
         transform_fields = np.array(transformations)[:, 0].tolist()
-        transform_fields = [item for sublist in transform_fields for item in sublist if len(item)>1]
+        #transform_fields = [item for sublist in transform_fields for item in sublist if len(item)>1]
         if feature not in transform_fields:
             print("Warning, feature {} not in the list {}".format(feature, transform_fields))
     return DataFrameMapper(filter(lambda x: x[0] in features, transformations), df_out=df_out)
