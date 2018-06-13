@@ -14,5 +14,6 @@ setup(
     packages=['core','utils'],
     include_package_data=True,
     entry_points={
+        'console_scripts':  ['predict_prices = predict_prices:main'],
     }
 )

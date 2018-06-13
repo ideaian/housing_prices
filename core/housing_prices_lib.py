@@ -158,6 +158,7 @@ def imputerize_df(features, df_out):
         ('priorSaleDateMonth', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
         ('priorSaleDateYear', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
         ('roomsPerSquareFootage', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('saleIncreaseRate', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
         ('zipcode', Identity()),
     ]
     for feature in features:
@@ -200,6 +201,7 @@ def featurize_df(features, df_out):
         ('priorSaleDateWeekOfYear', MinMaxScaler()),
         ('priorSaleDateMonth', MinMaxScaler()),
         ('priorSaleDateYear', MinMaxScaler()),
+        ('saleIncreaseRate', StandardScaler()),
     ]
     for feature in features:
         transform_fields = np.array(transformations)[:, 0].tolist()
