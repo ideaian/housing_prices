@@ -2,8 +2,35 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 
+
+class MakeFractionalFeatures(BaseEstimator, TransformerMixin):
+    # can also return the field names
+    def __init__(self, fractional_feature_list, remove_paired_features=False):
+        #: A fractional feature list tuple where you divide the first by the second
+        self.fractional_feature_list = fractional_feature_list
+        self.removed_paired_features = remove_paired_features
+        self.new_feature_list = [] 
+    def fit(self, df, y):
+        return self
+    def transform(self, df):
+        #: Check to ensure feature lists is in the data frame
+
+        #: go through the feature list and make a new dataframe element 
+        for i, (field1, field2) in enumerate(self.fractional_feature_list):
+            new_field_name = field1 + '_per_' + field2
+            df[new_field_name] = df[field1] / df[field2]
+            self.new_feature_list.append(new_field_name)
+
+        if self.remove_paired_features:
+            df.drop(labels=key, axis=1, inplace=True)
+
+        return df
+
+
 class ConvertDates(BaseEstimator, TransformerMixin):
-    #: TODO: Generalize this to allow for different date-type outputs to become features
+    # This Transformer converts datestrings to numerical values
+    # corresponding to different time periods.
+    #: TODO: Generalize this to allow for different type of dates to be output
     def __init__(self, date_fields):
         self.date_fields = date_fields
         self.new_date_fields = []
@@ -28,8 +55,10 @@ def convert_dates_helper(df, date_fields):
         if field not in df.keys():
             print("Warning, field {} not in dataframe".format(field))
             continue
+        #TODO: Detect Datestring Formats
         d = pd.Series(pd.to_datetime(df[field], format='%Y-%m-%d'))
-
+        
+        #TODO: Make this general for other types
         df[field + 'DayOfWeek'] = d.dt.dayofweek
         df[field + 'WeekOfYear'] = d.dt.weekofyear
         df[field + 'Month'] = d.dt.month
@@ -82,9 +111,15 @@ class KeepRequiredFields(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, df):
-        for key in iter(df.keys()):
-            if key not in self.required_fields:
-                df.drop(labels=key, axis=1, inplace=True)
+        for key in self.required_fields:
+            if key not in df.keys():
+                import sys
+                sys.exit("Required field {} not found in df list {}".format(key, df.keys()))
+
+        #for key in iter(df.keys()):
+        #    if key not in self.required_fields:
+        #        print("Dropping field {}".format(key))
+        #        df.drop(labels=key, axis=1, inplace=True)
         return df
 
 

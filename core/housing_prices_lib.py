@@ -12,8 +12,10 @@ import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.base import BaseEstimator, TransformerMixin
-from utils.custom_dataframe_sklearn_mixins import *
-
+from utils.custom_dataframe_sklearn_mixins import (
+        ConvertDates, MakeFractionalFeatures, ZeroToNanFields, NanToZeroFields,
+        KeepRequiredFields, RemoveNotUsefulFields
+    )
 
 class PrepareHousingData(BaseEstimator, TransformerMixin):
     def __init__(self, required_fields,
@@ -39,9 +41,20 @@ class PrepareHousingData(BaseEstimator, TransformerMixin):
         df = self.keep_required_fields.transform(df)
         df = self.zero_to_nan.transform(df)
         df = self.nan_to_zero.transform(df)
-        df = self.convert_dates.transform(df)
         df = self.impute_zip_codes.transform(df)
+        df = self.convert_dates.transform(df)
+        # use the new output date strings to rename thing
         return df
+
+
+#class AddExtraData(BaseEstimator, TransformerMixin):
+#    # can also return the field names
+#    def __init__(self, new_df):
+#        None
+#    def fit(self, df, y):
+#        return self
+#    def transform(self, df):
+#        None
 
 
 class ImputeZipCodes(BaseEstimator, TransformerMixin):
@@ -144,6 +157,7 @@ def imputerize_df(features, df_out):
         ('priorSaleDateWeekOfYear', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
         ('priorSaleDateMonth', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
         ('priorSaleDateYear', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
+        ('roomsPerSquareFootage', Imputer(missing_values=np.nan, strategy="mean", axis=0)),
         ('zipcode', Identity()),
     ]
     for feature in features:
@@ -196,6 +210,10 @@ def featurize_df(features, df_out):
 
 
 class StreetVectorizer(BaseEstimator, TransformerMixin):
+    '''
+    This will parse a dataframe's address column, looking for
+    words of greater than 2 characters and vectorize them. 
+    '''
     def __init__(self):
         self.cv = CountVectorizer(
             analyzer='word', token_pattern='[A-Za-z]{3,}')
@@ -207,9 +225,4 @@ class StreetVectorizer(BaseEstimator, TransformerMixin):
     def transform(self, df):
         return self.cv.transform(df['address'])
 
-# TODO: Evaluate different feature sets.
-# TODO: error handling of input data types
-# TODO: Ensure more broad testing of input data types (Nan/Zero handling)
-# TODO: Improve plotting/metric evaluation
-# TODO: Github repository
-# TODO: Robust deployment on different machine
+
